@@ -1,4 +1,4 @@
-"""A minimal agent harness for a finance agent, using a mock LLM.
+"""A minimal agent harness for an investments agent, using a mock LLM.
 
 An agent harness is just a loop:
 
@@ -8,21 +8,14 @@ An agent harness is just a loop:
     3. If the model gives a final answer, stop and return it.
 
 Everything below is one of three pieces: tools, the (mock) model, and the loop.
-Run it with:  python examples/finance_agent/agent.py
+Run it with:  python examples/investments_agent/agent.py
 """
 
 # ---------------------------------------------------------------------------
 # 1. Tools: plain Python functions the model is allowed to call.
 # ---------------------------------------------------------------------------
 
-ACCOUNTS = {"checking": 2450.75, "savings": 10200.00}
 STOCK_PRICES = {"AAPL": 227.50, "MSFT": 431.20, "NVDA": 118.90}
-
-
-def get_balance(account: str) -> str:
-    if account not in ACCOUNTS:
-        return f"Error: no account named '{account}'"
-    return f"${ACCOUNTS[account]:,.2f}"
 
 
 def get_stock_price(ticker: str) -> str:
@@ -33,7 +26,6 @@ def get_stock_price(ticker: str) -> str:
 
 # The harness looks tools up by name, because the model only ever says a name.
 TOOLS = {
-    "get_balance": get_balance,
     "get_stock_price": get_stock_price,
 }
 
@@ -56,26 +48,23 @@ def mock_llm(messages: list[dict]) -> dict:
 
     # If we just got a tool result back, turn it into a final answer.
     if last["role"] == "tool":
-        return {"type": "answer", "text": f"The result is {last['content']}."}
+        return {"type": "answer", "text": f"The price is {last['content']}."}
 
-    # Otherwise, look at the user's question and pick a tool.
-    question = last["content"].lower()
-    if "balance" in question:
-        account = "savings" if "savings" in question else "checking"
-        return {"type": "tool_call", "tool": "get_balance", "args": {"account": account}}
+    # Otherwise, look for a ticker in the user's question.
+    question = last["content"].upper()
     for ticker in STOCK_PRICES:
-        if ticker.lower() in question:
+        if ticker in question:
             return {"type": "tool_call", "tool": "get_stock_price", "args": {"ticker": ticker}}
 
     # No tool needed.
-    return {"type": "answer", "text": "I can check account balances and stock prices."}
+    return {"type": "answer", "text": "I can look up stock prices. Try asking about AAPL, MSFT, or NVDA."}
 
 
 # ---------------------------------------------------------------------------
 # 3. The harness: the loop that connects the model to the tools.
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = "You are a finance assistant. Use tools to look up balances and prices."
+SYSTEM_PROMPT = "You are an investments assistant. Use tools to look up stock prices."
 MAX_STEPS = 5  # Safety limit so a confused model can't loop forever.
 
 
@@ -109,9 +98,8 @@ def run_agent(user_input: str) -> str:
 
 if __name__ == "__main__":
     questions = [
-        "What's my checking balance?",
-        "How much is in my savings balance?",
         "What's the price of NVDA?",
+        "How much is AAPL trading at?",
         "Hello!",
     ]
     for q in questions:
