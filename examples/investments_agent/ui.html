@@ -1,0 +1,225 @@
+<title>Investments Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* Layout: two panes, the chat a user sees on the left and the harness trace
+     behind it on the right; stacked on phones. */
+  :root {
+    --bg: #f5f6f8;
+    --panel: #ffffff;
+    --fg: #1b2230;
+    --muted: #5d6779;
+    --line: #dde1e8;
+    --accent: #1f5f8b;
+    --accent-soft: #e6eef5;
+    --tool: #7a4a12;
+    --tool-soft: #f7eedf;
+    --up: #1d7a4c;
+    --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12161d; --panel: #1a1f28; --fg: #e3e7ee; --muted: #9aa4b5; --line: #2b3240;
+      --accent: #7db4dc; --accent-soft: #1d2b3a; --tool: #e2b071; --tool-soft: #2e2618; --up: #5cc493;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12161d; --panel: #1a1f28; --fg: #e3e7ee; --muted: #9aa4b5; --line: #2b3240;
+    --accent: #7db4dc; --accent-soft: #1d2b3a; --tool: #e2b071; --tool-soft: #2e2618; --up: #5cc493;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 15px; line-height: 1.5;
+    padding: 24px 16px;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; display: grid; gap: 20px; }
+  header h1 { font-size: 1.4rem; font-weight: 600; margin: 0; text-wrap: balance; }
+  header p { margin: 4px 0 0; color: var(--muted); max-width: 65ch; }
+  .panes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 20px; align-items: start; }
+  @media (max-width: 760px) { .panes { grid-template-columns: minmax(0, 1fr); } }
+
+  .pane { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; min-width: 0; }
+  .pane-head { padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .pane-head h2 { margin: 0; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .pane-head span { font-size: 0.8rem; color: var(--muted); }
+
+  .chat { padding: 16px; display: flex; flex-direction: column; gap: 10px; min-height: 260px; max-height: 460px; overflow-y: auto; }
+  .msg { max-width: 85%; padding: 8px 12px; border-radius: 10px; overflow-wrap: anywhere; }
+  .msg.user { align-self: flex-end; background: var(--accent); color: var(--panel); }
+  .msg.agent { align-self: flex-start; background: var(--accent-soft); }
+  .msg .price { font-family: var(--font-data); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .empty { color: var(--muted); margin: auto; text-align: center; }
+
+  .composer { border-top: 1px solid var(--line); padding: 12px 16px; display: grid; gap: 10px; }
+  .composer form { display: flex; gap: 8px; }
+  .composer input { flex: 1; min-width: 0; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); }
+  button { font: inherit; cursor: pointer; border-radius: 8px; }
+  .send { background: var(--accent); color: var(--panel); border: none; padding: 8px 14px; font-weight: 500; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { border: 1px solid var(--line); background: transparent; color: var(--fg); padding: 4px 10px; font-size: 0.85rem; }
+  .chip:hover, .send:hover { filter: brightness(1.08); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .trace { padding: 16px; display: grid; gap: 14px; max-height: 600px; overflow-y: auto; }
+  .run-title { font-size: 0.85rem; color: var(--muted); }
+  .step { display: grid; gap: 6px; }
+  .step-label { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+  .step-label.model { color: var(--accent); }
+  .step-label.tool { color: var(--tool); }
+  .step-label.done { color: var(--up); }
+  pre { margin: 0; padding: 10px 12px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); font-family: var(--font-data); font-size: 0.8rem; line-height: 1.55; overflow-x: auto; white-space: pre; }
+  pre.tool { background: var(--tool-soft); }
+  .k { color: var(--muted); }
+  .divider { border: none; border-top: 1px dashed var(--line); margin: 4px 0; width: 100%; }
+
+  .prices { display: flex; flex-wrap: wrap; gap: 16px; font-size: 0.85rem; color: var(--muted); }
+  .prices b { font-family: var(--font-data); font-weight: 500; color: var(--fg); font-variant-numeric: tabular-nums; }
+  @media (prefers-reduced-motion: no-preference) { .step { animation: in 0.25s ease-out; } }
+  @keyframes in { from { opacity: 0.4; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Investments Agent</h1>
+    <p>A mock agent harness that looks up stock prices. Ask a question on the left. The right side shows what the harness does behind the scenes: what the model receives, what it decides, and which tool runs.</p>
+  </header>
+
+  <div class="panes">
+    <section class="pane" aria-label="Chat">
+      <div class="pane-head"><h2>Chat</h2><span>What the user sees</span></div>
+      <div class="chat" id="chat"><p class="empty">Ask about a stock, or tap an example below.</p></div>
+      <div class="composer">
+        <div class="chips" id="chips"></div>
+        <form id="form">
+          <input id="question" type="text" autocomplete="off" placeholder="What's the price of NVDA?" aria-label="Your question">
+          <button class="send" type="submit">Ask</button>
+        </form>
+        <div class="prices" id="prices"></div>
+      </div>
+    </section>
+
+    <section class="pane" aria-label="Harness trace">
+      <div class="pane-head"><h2>Harness trace</h2><span>What happens behind the scenes</span></div>
+      <div class="trace" id="trace"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+// This mirrors examples/investments_agent/agent.py line for line.
+
+// ---- 1. Tools ----
+const STOCK_PRICES = { AAPL: 227.50, MSFT: 431.20, NVDA: 118.90 };
+const fmt = (n) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function get_stock_price({ ticker }) {
+  if (!(ticker in STOCK_PRICES)) return `Error: no price for '${ticker}'`;
+  return fmt(STOCK_PRICES[ticker]);
+}
+const TOOLS = { get_stock_price };
+
+// ---- 2. Mock model ----
+function mock_llm(messages) {
+  const last = messages[messages.length - 1];
+  if (last.role === "tool") return { type: "answer", text: `The price is ${last.content}.` };
+  const question = last.content.toUpperCase();
+  for (const ticker of Object.keys(STOCK_PRICES)) {
+    if (question.includes(ticker)) return { type: "tool_call", tool: "get_stock_price", args: { ticker } };
+  }
+  return { type: "answer", text: "I can look up stock prices. Try asking about AAPL, MSFT, or NVDA." };
+}
+
+// ---- 3. Harness loop (records each step so the page can show it) ----
+const SYSTEM_PROMPT = "You are an investments assistant. Use tools to look up stock prices.";
+const MAX_STEPS = 5;
+
+function run_agent(user_input) {
+  const trace = [];
+  const messages = [
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "user", content: user_input },
+  ];
+  for (let step = 0; step < MAX_STEPS; step++) {
+    const sent = messages.map((m) => ({ ...m }));
+    const response = mock_llm(messages);
+    trace.push({ kind: "model", step: step + 1, sent, response });
+    if (response.type === "answer") return { answer: response.text, trace };
+
+    const { tool, args } = response;
+    const result = tool in TOOLS ? TOOLS[tool](args) : `Error: unknown tool '${tool}'`;
+    trace.push({ kind: "tool", step: step + 1, tool, args, result });
+    messages.push({ role: "assistant", content: `call ${tool}(${JSON.stringify(args)})` });
+    messages.push({ role: "tool", content: result });
+  }
+  return { answer: "Stopped: too many steps.", trace };
+}
+
+// ---- Page rendering ----
+const chat = document.getElementById("chat");
+const traceEl = document.getElementById("trace");
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function addMsg(role, text) {
+  chat.querySelector(".empty")?.remove();
+  const div = document.createElement("div");
+  div.className = "msg " + role;
+  div.innerHTML = esc(text).replace(/\$[\d,]+\.\d{2}/g, (m) => `<span class="price">${m}</span>`);
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function messagesBlock(msgs) {
+  return msgs.map((m) => `<span class="k">${m.role.padEnd(9)}</span> ${esc(m.content)}`).join("\n");
+}
+
+function renderTrace(question, trace) {
+  const parts = [`<div class="run-title">Run for: <strong>${esc(question)}</strong></div>`];
+  for (const t of trace) {
+    if (t.kind === "model") {
+      parts.push(`<div class="step"><div class="step-label model">Step ${t.step} · harness sends messages to model</div><pre>${messagesBlock(t.sent)}</pre></div>`);
+      const label = t.response.type === "answer" ? "done" : "model";
+      const what = t.response.type === "answer" ? "Model returns a final answer → loop stops" : "Model asks for a tool";
+      parts.push(`<div class="step"><div class="step-label ${label}">${what}</div><pre>${esc(JSON.stringify(t.response, null, 2))}</pre></div>`);
+    } else {
+      parts.push(`<div class="step"><div class="step-label tool">Harness runs the tool</div><pre class="tool">${esc(t.tool)}(${esc(JSON.stringify(t.args))})  →  ${esc(t.result)}</pre></div>`);
+    }
+  }
+  traceEl.innerHTML = parts.join("");
+  traceEl.scrollTop = 0;
+}
+
+function ask(question) {
+  question = question.trim();
+  if (!question) return;
+  addMsg("user", question);
+  const { answer, trace } = run_agent(question);
+  addMsg("agent", answer);
+  renderTrace(question, trace);
+}
+
+const examples = ["What's the price of NVDA?", "How much is AAPL trading at?", "Is MSFT up today?", "Hello!"];
+const chips = document.getElementById("chips");
+for (const q of examples) {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "chip"; b.textContent = q;
+  b.addEventListener("click", () => ask(q));
+  chips.appendChild(b);
+}
+document.getElementById("prices").innerHTML = "Mock prices: " +
+  Object.entries(STOCK_PRICES).map(([t, p]) => `${t} <b>${fmt(p)}</b>`).join(" · ");
+
+document.getElementById("form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const input = document.getElementById("question");
+  ask(input.value);
+  input.value = "";
+});
+
+// Open with one example already run, so the trace is visible right away.
+ask(examples[0]);
+</script>
