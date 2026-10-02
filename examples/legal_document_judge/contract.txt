@@ -1,0 +1,18 @@
+FICTIONAL SERVICE AGREEMENT
+Educational fixture only; not a contract template.
+
+Clause 1 - Term
+The agreement runs for twelve months from the service start date.
+
+Clause 2 - Termination without cause
+After the first 90 days of service, the customer may terminate this agreement
+without cause by giving the provider at least 30 days' written notice.
+
+Clause 3 - Fees on termination
+The customer must pay fees for services supplied through the effective
+termination date. No additional early termination fee applies.
+
+Clause 4 - Termination for breach
+Either party may terminate if the other party commits a material breach
+and fails to remedy it within 15 days after receiving written notice
+describing the breach.
