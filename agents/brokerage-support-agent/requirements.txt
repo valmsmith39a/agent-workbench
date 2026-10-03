@@ -1,0 +1,5 @@
+# Python 3.11+
+pydantic>=2.0
+
+# tests
+pytest>=8
