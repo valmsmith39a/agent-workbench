@@ -1,0 +1,8 @@
+# Tested with Python 3.13, langgraph 1.2.12, langchain-core 1.6.6.
+langgraph>=1.0,<2
+langchain-core>=1.0,<2
+
+# Optional, for swapping in a real model / MCP tools later:
+# langchain>=1.0          # init_chat_model
+# langchain-openai>=1.0   # init_chat_model("openai:gpt-4o-mini")
+# langchain-mcp-adapters  # load tools from an MCP server
