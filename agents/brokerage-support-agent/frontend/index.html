@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Brokerage Support Agent</title>
+  <style>
+    :root {
+      --bg: #f6f7f9; --panel: #ffffff; --text: #16191f; --muted: #667085;
+      --border: #e4e7ec; --accent: #1d4ed8; --accent-soft: #eef2ff;
+      --user: #1d4ed8; --user-text: #ffffff; --code: #f2f4f7; --error: #b42318;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+      font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .app { max-width: 820px; margin: 0 auto; height: 100vh; display: flex; flex-direction: column; padding: 0 16px; }
+    header { padding: 20px 0 14px; border-bottom: 1px solid var(--border); display: flex;
+      flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+    h1 { font-size: 18px; margin: 0; }
+    .sub { color: var(--muted); font-size: 13px; }
+    .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 13px; color: var(--muted); }
+    select { font: inherit; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text); }
+    .badge { background: var(--accent-soft); color: var(--accent); padding: 3px 8px; border-radius: 999px; font-size: 12px; white-space: nowrap; }
+    #log { flex: 1; overflow-y: auto; padding: 20px 0; display: flex; flex-direction: column; gap: 14px; }
+    .msg { max-width: 85%; padding: 10px 14px; border-radius: 14px; }
+    .msg.user { align-self: flex-end; background: var(--user); color: var(--user-text); border-bottom-right-radius: 4px; }
+    .msg.assistant { align-self: flex-start; background: var(--panel); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+    .msg.assistant p { margin: 0 0 8px; } .msg.assistant p:last-child { margin: 0; }
+    .msg.assistant ul { margin: 4px 0 8px; padding-left: 20px; }
+    .msg.error { color: var(--error); }
+    details { margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 8px; font-size: 13px; }
+    summary { cursor: pointer; color: var(--muted); }
+    .trace { margin-top: 8px; }
+    .trace-head { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; }
+    .trace-head span { font-weight: 400; color: var(--muted); }
+    pre { background: var(--code); padding: 10px; border-radius: 8px; overflow-x: auto; font-size: 12px; margin: 6px 0 0; max-height: 320px; }
+    .empty { color: var(--muted); text-align: center; margin: auto 0; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 12px; }
+    .chip { border: 1px solid var(--border); background: var(--panel); border-radius: 999px; padding: 6px 12px;
+      font: inherit; font-size: 13px; cursor: pointer; color: var(--text); }
+    .chip:hover { border-color: var(--accent); color: var(--accent); }
+    form { display: flex; gap: 8px; padding: 14px 0 20px; border-top: 1px solid var(--border); }
+    input[type=text] { flex: 1; min-width: 0; font: inherit; padding: 11px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); }
+    input[type=text]:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+    button.send { font: inherit; padding: 0 18px; border: 0; border-radius: 10px; background: var(--accent); color: #fff; cursor: pointer; }
+    button.send:disabled { opacity: .5; cursor: default; }
+    .typing { color: var(--muted); font-style: italic; }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <h1>Brokerage Customer Support Agent</h1>
+      <div class="sub">LangGraph agent · MCP brokerage tools · mock data</div>
+    </div>
+    <div class="controls">
+      <label for="account">Signed in as</label>
+      <select id="account"></select>
+      <span class="badge" id="model">loading…</span>
+    </div>
+  </header>
+
+  <div id="log">
+    <div class="empty" id="empty">
+      Ask about an order, a transfer, or why a trade can't be placed.
+      <div class="chips">
+        <button class="chip">Did my NVDA trade go through?</button>
+        <button class="chip">Where is the $5,000 I transferred from my checking account?</button>
+        <button class="chip">Why can't I place this trade?</button>
+        <button class="chip">Can I buy 20 shares of NVDA?</button>
+      </div>
+    </div>
+  </div>
+
+  <form id="form">
+    <input id="input" type="text" placeholder="Type a question…" autocomplete="off" autofocus>
+    <button class="send" id="send">Send</button>
+  </form>
+</div>
+
+<script>
+  const log = document.getElementById("log");
+  const input = document.getElementById("input");
+  const send = document.getElementById("send");
+  const accountSelect = document.getElementById("account");
+  let history = [];
+
+  const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  // Minimal markdown: paragraphs, "- " bullets, **bold**.
+  function render(text) {
+    const inline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    return text.trim().split(/\n{2,}/).map((block) => {
+      const lines = block.split("\n");
+      if (lines.every((l) => /^\s*[-*] /.test(l))) {
+        return "<ul>" + lines.map((l) => "<li>" + inline(l.replace(/^\s*[-*] /, "")) + "</li>").join("") + "</ul>";
+      }
+      return "<p>" + lines.map(inline).join("<br>") + "</p>";
+    }).join("");
+  }
+
+  function add(role, html, cls = "") {
+    document.getElementById("empty")?.remove();
+    const div = document.createElement("div");
+    div.className = `msg ${role} ${cls}`;
+    div.innerHTML = html;
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+    return div;
+  }
+
+  function traceHtml(data) {
+    if (!data.tool_calls.length) return `<details><summary>No tool called · ${data.total_latency_ms} ms total</summary></details>`;
+    const items = data.tool_calls.map((t) => `
+      <div class="trace">
+        <div class="trace-head">MCP tool: ${esc(t.tool)} <span>${t.latency_ms} ms${t.is_error ? " · error" : ""}</span></div>
+        <pre>${esc(JSON.stringify({ arguments_from_model: t.arguments, injected_from_session: t.context }, null, 2))}</pre>
+        <pre>${esc(JSON.stringify(t.result, null, 2))}</pre>
+      </div>`).join("");
+    const names = data.tool_calls.map((t) => t.tool).join(", ");
+    return `<details><summary>Tool trace: ${esc(names)} · ${data.total_latency_ms} ms total</summary>${items}</details>`;
+  }
+
+  async function ask(message) {
+    add("user", esc(message));
+    const pending = add("assistant", "Checking your account…", "typing");
+    send.disabled = true;
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, account_id: accountSelect.value, history }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || res.statusText);
+      pending.className = "msg assistant";
+      pending.innerHTML = render(data.answer) + traceHtml(data);
+      history.push({ role: "user", content: message }, { role: "assistant", content: data.answer });
+      history = history.slice(-20);
+    } catch (err) {
+      pending.className = "msg assistant error";
+      pending.textContent = "Something went wrong: " + err.message;
+    } finally {
+      send.disabled = false;
+      input.focus();
+      log.scrollTop = log.scrollHeight;
+    }
+  }
+
+  document.getElementById("form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const message = input.value.trim();
+    if (!message || send.disabled) return;
+    input.value = "";
+    ask(message);
+  });
+  log.addEventListener("click", (e) => { if (e.target.classList.contains("chip")) ask(e.target.textContent); });
+
+  // Switching customer starts a fresh conversation.
+  accountSelect.addEventListener("change", () => { history = []; log.innerHTML = ""; add("assistant", `Now signed in as <strong>${esc(accountSelect.selectedOptions[0].text)}</strong>. How can I help?`); });
+
+  fetch("/api/config").then((r) => r.json()).then((cfg) => {
+    document.getElementById("model").textContent = cfg.model;
+    for (const a of cfg.demo_accounts) {
+      const opt = new Option(`${a.name} (${a.account_id})`, a.account_id, false, a.account_id === cfg.default_account_id);
+      accountSelect.add(opt);
+    }
+  });
+</script>
+</body>
+</html>
