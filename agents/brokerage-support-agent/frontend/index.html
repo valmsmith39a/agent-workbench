@@ -7,7 +7,7 @@
   <style>
     :root {
       --bg: #f6f7f9; --panel: #ffffff; --text: #16191f; --muted: #667085;
-      --border: #e4e7ec; --accent: #1d4ed8; --error: #b42318;
+      --border: #e4e7ec; --accent: #1d4ed8; --error: #b42318; --code: #f2f4f7;
     }
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); color: var(--text);
@@ -22,7 +22,13 @@
     .assistant { align-self: flex-start; background: var(--panel); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
     .assistant.pending { color: var(--muted); font-style: italic; }
     .assistant.error { color: var(--error); }
-    .tools { display: block; margin-top: 6px; font-size: 12px; color: var(--muted); }
+    details.trace { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--border);
+      font-size: 12px; color: var(--muted); white-space: normal; }
+    details.trace summary { cursor: pointer; }
+    .trace h3 { margin: 10px 0 2px; font-size: 12px; color: var(--text); display: flex; justify-content: space-between; }
+    .trace .label { margin: 6px 0 2px; }
+    .trace pre { margin: 0; padding: 8px 10px; background: var(--code); border-radius: 8px; color: var(--text);
+      font-size: 12px; overflow-x: auto; max-height: 280px; }
     .empty { margin: auto 0; text-align: center; color: var(--muted); }
     .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 12px; }
     .chip { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 999px; cursor: pointer;
@@ -40,7 +46,7 @@
 <div class="app">
   <header>
     <h1>Brokerage Customer Support Agent</h1>
-    <div class="sub">Signed in as demo customer ACCT-DEMO-1001 · mock data</div>
+    <div class="sub">Signed in as demo customer ACCT-DEMO-1001 · mock data<span id="model"></span></div>
   </header>
 
   <div id="log">
@@ -68,6 +74,34 @@
   const input = document.getElementById("input");
   const send = document.getElementById("send");
 
+  function el(tag, text, className) {
+    const node = document.createElement(tag);
+    if (text !== undefined) node.textContent = text;
+    if (className) node.className = className;
+    return node;
+  }
+
+  // Expandable panel: which MCP tool ran, with what arguments, what it returned, how long it took.
+  function traceElement(data) {
+    const details = el("details", undefined, "trace");
+    const names = data.tool_calls.map((t) => t.name).join(", ") || "no tool called";
+    details.appendChild(el("summary", `Tool trace: ${names} · ${data.total_latency_ms} ms total`));
+    for (const t of data.tool_calls) {
+      const heading = el("h3");
+      heading.append(el("span", `MCP tool: ${t.name}`), el("span", `${t.latency_ms} ms`));
+      details.append(
+        heading,
+        el("div", "Arguments chosen by the model", "label"),
+        el("pre", JSON.stringify(t.args, null, 2)),
+        el("div", "Added by the server (not the model)", "label"),
+        el("pre", JSON.stringify(t.injected, null, 2)),
+        el("div", "Result", "label"),
+        el("pre", JSON.stringify(t.result, null, 2)),
+      );
+    }
+    return details;
+  }
+
   // Add a chat bubble. Text goes in via textContent, so nothing is parsed as HTML.
   function addMessage(role, text, extraClass = "") {
     document.getElementById("empty")?.remove();
@@ -94,12 +128,8 @@
 
       bubble.className = "msg assistant";
       bubble.textContent = data.answer;
-      if (data.tool_calls.length) {
-        const tools = document.createElement("span");
-        tools.className = "tools";
-        tools.textContent = "Looked up with: " + data.tool_calls.map((t) => t.name).join(", ");
-        bubble.appendChild(tools);
-      }
+      bubble.appendChild(traceElement(data));
+      document.getElementById("model").textContent = ` · model: ${data.model}`;
     } catch (err) {
       bubble.className = "msg assistant error";
       bubble.textContent = "Something went wrong: " + err.message;

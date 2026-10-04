@@ -8,18 +8,19 @@ once. Each request then just runs the graph.
     uvicorn app.main:app --reload
 """
 
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import HumanMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.tools import load_mcp_tools
 
 from app.agent.graph import build_graph
 from app.agent.llm import create_chat_model
 from app.config import DEMO_ACCOUNT_ID, MCP_SERVERS, PROJECT_ROOT
-from app.models.api import ChatRequest, ChatResponse, ToolCall
+from app.models.api import ChatRequest, ChatResponse, ToolTrace
 
 
 @asynccontextmanager
@@ -45,11 +46,13 @@ def index() -> FileResponse:
 async def chat(req: ChatRequest) -> ChatResponse:
     # The account comes from the server side (later: the authenticated session),
     # never from the request body or the model.
-    state = await app.state.graph.ainvoke({"messages": [HumanMessage(req.message)], "account_id": DEMO_ACCOUNT_ID})
-    tool_calls = [
-        ToolCall(name=call["name"], args=call["args"])
-        for message in state["messages"]
-        if isinstance(message, AIMessage)
-        for call in message.tool_calls
-    ]
-    return ChatResponse(answer=state["messages"][-1].text, tool_calls=tool_calls, model=app.state.model_name)
+    start = time.perf_counter()
+    state = await app.state.graph.ainvoke(
+        {"messages": [HumanMessage(req.message)], "account_id": DEMO_ACCOUNT_ID, "tool_traces": []}
+    )
+    return ChatResponse(
+        answer=state["messages"][-1].text,
+        tool_calls=[ToolTrace(**trace) for trace in state["tool_traces"]],
+        model=app.state.model_name,
+        total_latency_ms=round((time.perf_counter() - start) * 1000, 1),
+    )

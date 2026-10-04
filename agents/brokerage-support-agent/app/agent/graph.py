@@ -8,6 +8,9 @@
   the conversation, then hands control back to the agent node so the model can
   write the final answer from those results.
 
+The tools node also records a trace of each call (arguments, injected
+account, structured result, latency) so the UI can show what happened.
+
 The model is shown the tools *without* their account_id parameter. The tools
 node fills account_id in from the graph state, which the caller sets for the
 signed-in customer. So the model can never choose whose account is read.
@@ -15,7 +18,9 @@ signed-in customer. So the model can never choose whose account is read.
 
 import copy
 import json
-from typing import Any
+import operator
+import time
+from typing import Annotated, Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
@@ -26,9 +31,22 @@ from app.agent.prompts import SYSTEM_PROMPT
 
 
 class AgentState(MessagesState):
-    """The conversation (from MessagesState) plus the signed-in customer's account."""
+    """The conversation (from MessagesState), the signed-in customer's account,
+    and a trace of every tool call made during the run."""
 
     account_id: str
+    tool_traces: Annotated[list[dict[str, Any]], operator.add]  # each node's traces are appended
+
+
+def _structured_result(message: ToolMessage) -> dict[str, Any]:
+    """The tool's JSON result. MCP tools put it in the message artifact; fall back to the text."""
+    artifact = message.artifact or {}
+    if isinstance(artifact, dict) and artifact.get("structured_content") is not None:
+        return artifact["structured_content"]
+    try:
+        return json.loads(message.text)
+    except (json.JSONDecodeError, TypeError):
+        return {"raw": message.text}
 
 
 def model_facing_schema(tool: BaseTool) -> dict[str, Any]:
@@ -48,19 +66,31 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool]):
         return {"messages": [response]}
 
     async def call_tools(state: AgentState) -> dict[str, Any]:
-        results = []
+        results, traces = [], []
         for call in state["messages"][-1].tool_calls:
             # Drop any account_id the model tried to pass; use the session's.
-            args = {k: v for k, v in call["args"].items() if k != "account_id"}
-            args["account_id"] = state["account_id"]
+            model_args = {k: v for k, v in call["args"].items() if k != "account_id"}
+            args = {**model_args, "account_id": state["account_id"]}
             tool = tools_by_name.get(call["name"])
+            start = time.perf_counter()
             if tool is None:
                 error = {"error": {"code": "UNKNOWN_TOOL", "message": f"No tool named {call['name']}."}}
-                results.append(ToolMessage(json.dumps(error), tool_call_id=call["id"], name=call["name"]))
-                continue
-            # Invoking with the full tool call returns a ToolMessage linked to the call's id.
-            results.append(await tool.ainvoke({**call, "args": args}))
-        return {"messages": results}
+                message = ToolMessage(json.dumps(error), tool_call_id=call["id"], name=call["name"])
+            else:
+                # Invoking with the full tool call returns a ToolMessage linked to the call's id.
+                message = await tool.ainvoke({**call, "args": args})
+            latency_ms = round((time.perf_counter() - start) * 1000, 1)
+            results.append(message)
+            traces.append(
+                {
+                    "name": call["name"],
+                    "args": model_args,
+                    "injected": {"account_id": state["account_id"]},
+                    "result": _structured_result(message),
+                    "latency_ms": latency_ms,
+                }
+            )
+        return {"messages": results, "tool_traces": traces}
 
     def route(state: AgentState) -> str:
         last = state["messages"][-1]
