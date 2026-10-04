@@ -8,7 +8,7 @@ This project is being built in small steps. Each step adds one layer and can be 
 
 - [x] **Step 1: mock brokerage data and a trade status lookup.** Plain Python, no AI yet.
 - [x] **Step 2: expose the lookup as an MCP tool (`get_trade_status`)**
-- [ ] Step 3: a LangGraph agent that calls the tool to answer "Did my NVDA trade go through?"
+- [x] **Step 3: a LangGraph agent that calls the tool to answer "Did my NVDA trade go through?"**
 - [ ] Step 4: a FastAPI chat endpoint
 - [ ] Step 5: a simple chat UI
 - [ ] Step 6: add `get_transfer_status`
@@ -50,5 +50,36 @@ Run it:
 
 ```bash
 python -m app.mcp.client_demo   # lists the tools, then calls get_trade_status for NVDA
+pytest
+```
+
+## Step 3: the agent
+
+```
+app/agent/graph.py      LangGraph graph: agent node + tools node; injects account_id
+app/agent/prompts.py    system prompt
+app/agent/llm.py        picks Claude (if ANTHROPIC_API_KEY is set) or the offline stand-in
+app/agent/mock_llm.py   offline stand-in: keyword rules, not an LLM
+app/agent/cli.py        ask one question from the terminal and print each step
+tests/test_agent.py
+```
+
+The graph:
+
+```
+START -> agent --(model asked for a tool)--> tools -> agent -> END
+               \--(model answered)--------------------------> END
+```
+
+The agent starts the MCP server from step 2 as a subprocess and loads its
+tools with `langchain-mcp-adapters`. The model sees the tool without its
+`account_id` parameter; the tools node fills it in for the signed-in customer,
+so the model can't read another customer's account.
+
+Run it:
+
+```bash
+python -m app.agent.cli "Did my NVDA trade go through?"
+export ANTHROPIC_API_KEY=...   # optional: use Claude instead of the offline stand-in
 pytest
 ```
