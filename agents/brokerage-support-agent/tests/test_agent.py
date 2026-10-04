@@ -49,6 +49,15 @@ async def test_transfer_question_calls_get_transfer_status_and_answers(tools):
     assert "2026-10-05" in answer.text
 
 
+async def test_restriction_question_calls_get_account_restrictions_and_answers(tools):
+    messages = await ask(MockBrokerageChatModel(), tools, "Why can't I buy 25 shares of AMD?")
+    human, tool_request, tool_result, answer = messages
+    assert tool_request.tool_calls[0]["name"] == "get_account_restrictions"
+    assert tool_request.tool_calls[0]["args"] == {"symbol": "AMD", "side": "BUY", "quantity": 25}
+    assert '"INSUFFICIENT_BUYING_POWER"' in tool_result.text
+    assert "412.55" in answer.text
+
+
 async def test_question_without_a_trade_gets_no_tool_call(tools):
     messages = await ask(MockBrokerageChatModel(), tools, "hello")
     assert len(messages) == 2 and not messages[1].tool_calls

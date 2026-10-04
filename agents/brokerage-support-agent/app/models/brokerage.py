@@ -67,3 +67,37 @@ class TransferStatusResult(BaseModel):
     amount: float | None  # filters that were applied, if any
     direction: TransferDirection | None
     transfers: list[Transfer]
+
+
+class Restriction(BaseModel):
+    code: str
+    symbol: str | None  # None means it applies to the whole account
+    description: str
+    resolution: str  # what the customer can do about it
+
+
+class ProposedOrder(BaseModel):
+    """An order the customer wants to place, priced with an indicative quote."""
+
+    symbol: str
+    side: OrderSide
+    quantity: int
+    estimated_price: float
+    estimated_cost: float
+
+
+class BlockingReason(BaseModel):
+    code: str  # e.g. INSUFFICIENT_BUYING_POWER, UNSETTLED_FUNDS, ACCOUNT_RESTRICTION
+    message: str
+
+
+class AccountRestrictionsResult(BaseModel):
+    account_id: str
+    account_type: str  # CASH or MARGIN
+    buying_power: float
+    unsettled_funds: float
+    unsettled_settlement_date: date | None
+    restrictions: list[Restriction]
+    proposed_order: ProposedOrder | None  # set when a specific order was checked
+    can_place_order: bool | None  # None when no specific order was checked
+    blocking_reasons: list[BlockingReason]

@@ -29,9 +29,9 @@ async def call(session, name, **args):
     return result.structuredContent
 
 
-async def test_server_advertises_both_tools(session):
+async def test_server_advertises_all_tools(session):
     tools = await session.list_tools()
-    assert [t.name for t in tools.tools] == ["get_trade_status", "get_transfer_status"]
+    assert [t.name for t in tools.tools] == ["get_trade_status", "get_transfer_status", "get_account_restrictions"]
 
 
 @pytest.mark.parametrize(
@@ -64,3 +64,12 @@ async def test_get_transfer_status(session, amount, status):
 async def test_transfer_errors_come_back_as_structured_data(session):
     data = await call(session, "get_transfer_status", account_id="ACCT-DEMO-1001", amount=-1)
     assert data["error"]["code"] == "INVALID_REQUEST"
+
+
+async def test_get_account_restrictions(session):
+    data = await call(
+        session, "get_account_restrictions", account_id="ACCT-DEMO-1001", symbol="NVDA", side="BUY", quantity=10
+    )
+    assert data["can_place_order"] is False
+    assert data["blocking_reasons"][0]["code"] == "UNSETTLED_FUNDS"
+    assert data["unsettled_settlement_date"] == "2026-10-05"

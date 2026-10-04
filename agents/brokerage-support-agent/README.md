@@ -12,7 +12,7 @@ This project is being built in small steps. Each step adds one layer and can be 
 - [x] **Step 4: a FastAPI chat endpoint**
 - [x] **Step 5: a simple chat UI**
 - [x] **Step 6: add `get_transfer_status`**
-- [ ] Step 7: add `get_account_restrictions`
+- [x] **Step 7: add `get_account_restrictions`**
 - [ ] Step 8: tool trace in the UI, and a fuller README
 
 ## Step 1: the data layer
@@ -147,4 +147,38 @@ Mock transfers: a $5,000 deposit that is **processing**, a $2,500 deposit that
 
 ```bash
 python -m app.agent.cli "Where is the \$5,000 I transferred from my checking account?"
+```
+
+## Step 7: the account restrictions tool
+
+```
+app/models/brokerage.py                 + Restriction, ProposedOrder, BlockingReason, AccountRestrictionsResult
+app/services/mock_brokerage_service.py  + account balances, restrictions, mock quotes, pre-trade checks
+app/mcp/tools/accounts.py               new get_account_restrictions MCP tool
+app/mcp/server.py                       registers it
+app/agent/prompts.py, mock_llm.py       when and how to use it
+```
+
+The pre-trade checks are plain code in the service, not the model. Given a
+symbol, side and quantity, the service prices the order with a mock quote and
+returns `can_place_order` plus each blocking reason. The model only explains
+the result.
+
+The demo account (cash account, $412.55 buying power, $1,381.02 unsettled from
+an AAPL sale that settles 2026-10-05, insider flag on GOOGL) shows each case:
+
+| Order | Result |
+|---|---|
+| buy 2 NVDA | allowed |
+| buy 10 NVDA | blocked: **unsettled funds** (covered after 2026-10-05) |
+| buy 25 AMD | blocked: **insufficient buying power** |
+| buy 1 GOOGL | blocked: **account restriction** (insider pre-clearance) |
+| sell 9 TSLA | blocked: holds only 5 shares |
+
+With no order named ("Why can't I place this trade?"), the tool returns the
+account's buying power, unsettled funds and restrictions, and the agent asks
+which order the customer means.
+
+```bash
+python -m app.agent.cli "Why can't I buy 10 shares of NVDA?"
 ```

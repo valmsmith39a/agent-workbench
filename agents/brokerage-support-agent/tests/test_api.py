@@ -28,6 +28,13 @@ def test_chat_answers_transfer_question(client):
     assert "processing" in body["answer"]
 
 
+def test_chat_answers_restriction_question(client):
+    res = client.post("/api/chat", json={"message": "Why can't I place this trade?"})
+    body = res.json()
+    assert body["tool_calls"] == [{"name": "get_account_restrictions", "args": {}}]
+    assert "412.55" in body["answer"]
+
+
 def test_empty_message_is_rejected(client):
     assert client.post("/api/chat", json={"message": ""}).status_code == 422
 

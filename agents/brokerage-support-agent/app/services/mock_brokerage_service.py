@@ -7,7 +7,18 @@ All names and IDs are fictional.
 
 import re
 
-from app.models.brokerage import Order, TradeStatusResult, Transfer, TransferDirection, TransferStatusResult
+from app.models.brokerage import (
+    AccountRestrictionsResult,
+    BlockingReason,
+    Order,
+    OrderSide,
+    ProposedOrder,
+    Restriction,
+    TradeStatusResult,
+    Transfer,
+    TransferDirection,
+    TransferStatusResult,
+)
 
 ORDERS = {
     "ACCT-DEMO-1001": [
@@ -40,6 +51,16 @@ ORDERS = {
             "filled_quantity": 0,
             "submitted_at": "2026-10-02T15:10:44Z",
             "status_reason": "Estimated cost of $3,807.50 exceeded buying power of $412.55.",
+        },
+        {
+            "order_id": "ORD-7F3K-1004",
+            "symbol": "AAPL",
+            "side": "SELL",
+            "quantity": 6,
+            "status": "FILLED",
+            "filled_quantity": 6,
+            "average_fill_price": 230.17,
+            "submitted_at": "2026-10-02T14:05:10Z",
         },
     ],
 }
@@ -79,7 +100,30 @@ TRANSFERS = {
     ],
 }
 
-ACCOUNT_IDS = {"ACCT-DEMO-1001"}
+ACCOUNTS = {
+    "ACCT-DEMO-1001": {
+        "account_type": "CASH",
+        "buying_power": 412.55,  # settled cash available to buy with
+        "unsettled_funds": 1381.02,  # proceeds of the AAPL sale (ORD-7F3K-1004), settles T+1
+        "unsettled_settlement_date": "2026-10-05",
+        "positions": {"NVDA": 10, "TSLA": 5},
+        "restrictions": [
+            {
+                "code": "INSIDER_PRE_CLEARANCE",
+                "symbol": "GOOGL",
+                "description": (
+                    "Your account is flagged as an insider for GOOGL. Orders in GOOGL need "
+                    "pre-clearance from our compliance team."
+                ),
+                "resolution": "Request pre-clearance under Settings > Compliance; reviews take about 1 business day.",
+            }
+        ],
+    },
+}
+
+# Indicative prices used to estimate an order's cost. Not market data.
+QUOTES = {"AAPL": 230.17, "AMD": 152.30, "GOOGL": 165.40, "MSFT": 431.20, "NVDA": 118.90, "TSLA": 251.80}
+
 SYMBOL_RE = re.compile(r"^[A-Z]{1,5}$")
 
 
@@ -98,7 +142,7 @@ class InvalidRequestError(BrokerageError):
 
 
 def _require_account(account_id: str) -> None:
-    if account_id not in ACCOUNT_IDS:
+    if account_id not in ACCOUNTS:
         raise AccountNotFoundError(f"Account '{account_id}' was not found.")
 
 
@@ -142,7 +186,96 @@ def get_transfer_status(
     return TransferStatusResult(account_id=account_id, amount=amount, direction=direction, transfers=transfers)
 
 
+def get_account_restrictions(
+    account_id: str, symbol: str | None = None, side: str | None = None, quantity: int | None = None
+) -> AccountRestrictionsResult:
+    """Return buying power, unsettled funds and restrictions.
+
+    If symbol, side and quantity are given, also run pre-trade checks on that
+    order and say whether it can be placed and, if not, why.
+    """
+    _require_account(account_id)
+    acct = ACCOUNTS[account_id]
+    restrictions = [Restriction(**r) for r in acct["restrictions"]]
+
+    order, reasons = None, []
+    if symbol is not None or side is not None or quantity is not None:
+        order = _price_order(symbol, side, quantity)
+        reasons = _blocking_reasons(acct, restrictions, order)
+
+    return AccountRestrictionsResult(
+        account_id=account_id,
+        account_type=acct["account_type"],
+        buying_power=acct["buying_power"],
+        unsettled_funds=acct["unsettled_funds"],
+        unsettled_settlement_date=acct["unsettled_settlement_date"],
+        restrictions=restrictions,
+        proposed_order=order,
+        can_place_order=None if order is None else not reasons,
+        blocking_reasons=reasons,
+    )
+
+
+def _price_order(symbol: str | None, side: str | None, quantity: int | None) -> ProposedOrder:
+    if symbol is None or side is None or quantity is None:
+        raise InvalidRequestError("To check an order, provide symbol, side and quantity together.")
+    symbol = symbol.strip().upper()
+    if symbol not in QUOTES:
+        raise InvalidRequestError(f"No quote is available for '{symbol}'.")
+    try:
+        side = OrderSide(side.strip().upper())
+    except ValueError:
+        raise InvalidRequestError("Side must be BUY or SELL.") from None
+    if quantity <= 0:
+        raise InvalidRequestError("Quantity must be at least 1 share.")
+    price = QUOTES[symbol]
+    return ProposedOrder(
+        symbol=symbol, side=side, quantity=quantity, estimated_price=price, estimated_cost=round(price * quantity, 2)
+    )
+
+
+def _blocking_reasons(acct: dict, restrictions: list[Restriction], order: ProposedOrder) -> list[BlockingReason]:
+    """The deterministic pre-trade checks. The model only explains what these return."""
+    reasons = []
+    for r in restrictions:
+        if r.symbol is None or r.symbol == order.symbol:
+            reasons.append(BlockingReason(code="ACCOUNT_RESTRICTION", message=f"{r.description} {r.resolution}"))
+
+    if order.side == OrderSide.BUY and order.estimated_cost > acct["buying_power"]:
+        cost, bp, unsettled = order.estimated_cost, acct["buying_power"], acct["unsettled_funds"]
+        if cost <= bp + unsettled:
+            reasons.append(
+                BlockingReason(
+                    code="UNSETTLED_FUNDS",
+                    message=(
+                        f"The estimated cost of ${cost:,.2f} is more than your buying power of ${bp:,.2f}. "
+                        f"${unsettled:,.2f} from a recent sale settles on {acct['unsettled_settlement_date']}; "
+                        "after that, this order would be covered."
+                    ),
+                )
+            )
+        else:
+            reasons.append(
+                BlockingReason(
+                    code="INSUFFICIENT_BUYING_POWER",
+                    message=f"The estimated cost of ${cost:,.2f} is more than your buying power of ${bp:,.2f}.",
+                )
+            )
+
+    if order.side == OrderSide.SELL:
+        held = acct["positions"].get(order.symbol, 0)
+        if order.quantity > held:
+            reasons.append(
+                BlockingReason(
+                    code="INSUFFICIENT_SHARES",
+                    message=f"You hold {held} shares of {order.symbol}, fewer than the {order.quantity} you want to sell.",
+                )
+            )
+    return reasons
+
+
 if __name__ == "__main__":
     # Try it:  python -m app.services.mock_brokerage_service
     print(get_trade_status("ACCT-DEMO-1001", symbol="nvda").model_dump_json(indent=2))
     print(get_transfer_status("ACCT-DEMO-1001", amount=5000).model_dump_json(indent=2))
+    print(get_account_restrictions("ACCT-DEMO-1001", "NVDA", "BUY", 10).model_dump_json(indent=2))

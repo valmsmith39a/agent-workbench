@@ -8,11 +8,12 @@ MCP client (and later, the agent) launches it:
 
 from mcp.server.fastmcp import FastMCP
 
-from app.mcp.tools import trades, transfers
+from app.mcp.tools import accounts, trades, transfers
 
 mcp = FastMCP("brokerage-support")
 trades.register(mcp)
 transfers.register(mcp)
+accounts.register(mcp)
 
 if __name__ == "__main__":
     mcp.run(transport="stdio")

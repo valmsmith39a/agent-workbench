@@ -4,8 +4,8 @@ This is NOT an LLM. It fakes the two things the real model does in this
 graph, using simple rules:
 
 1. Given the customer's question, decide whether to call a tool and with
-   which arguments (money words -> get_transfer_status, a ticker or trade
-   words -> get_trade_status).
+   which arguments ("can't"/"can I" -> get_account_restrictions, money
+   words -> get_transfer_status, a ticker or trade words -> get_trade_status).
 2. Given the tool's JSON result, write a reply.
 
 It lets the whole flow run without network access. Set ANTHROPIC_API_KEY to
@@ -24,11 +24,24 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 NOT_TICKERS = {"I", "A", "OK", "ID", "US", "USD", "ACH"}
 TRADE_WORDS = ("trade", "order", "fill", "go through", "execute", "bought", "sold")
 TRANSFER_WORDS = ("transfer", "deposit", "withdraw", "money", "$")
+FALLBACK_REPLY = "I can help with your orders, transfers, and why a trade can't be placed. What would you like to look up?"
+RESTRICTION_WORDS = ("can't", "cannot", "can i", "unable", "buying power", "restrict", "not allowed")
+
+
+def find_ticker(question: str) -> str | None:
+    return next((t for t in re.findall(r"\b[A-Z]{1,5}\b", question) if t not in NOT_TICKERS), None)
 
 
 def pick_tool_call(question: str) -> dict[str, Any] | None:
     lower = question.lower()
-    if any(w in lower for w in TRANSFER_WORDS):
+    if any(w in lower for w in RESTRICTION_WORDS):
+        name, args = "get_account_restrictions", {}
+        symbol = find_ticker(question)
+        quantity = re.search(r"\b(\d+)\s+(?:shares?\s+(?:of\s+)?)?[A-Z]{1,5}\b", question)
+        side = "SELL" if "sell" in lower else "BUY" if "buy" in lower else None
+        if symbol and quantity and side:
+            args = {"symbol": symbol, "side": side, "quantity": int(quantity.group(1))}
+    elif any(w in lower for w in TRANSFER_WORDS):
         name, args = "get_transfer_status", {}
         amount = re.search(r"\$\s?([\d,]+(?:\.\d{1,2})?)", question)
         if amount:
@@ -38,7 +51,7 @@ def pick_tool_call(question: str) -> dict[str, Any] | None:
         elif "deposit" in lower:
             args["direction"] = "DEPOSIT"
     else:
-        symbol = next((t for t in re.findall(r"\b[A-Z]{1,5}\b", question) if t not in NOT_TICKERS), None)
+        symbol = find_ticker(question)
         if symbol is None and not any(w in lower for w in TRADE_WORDS):
             return None
         name, args = "get_trade_status", {"symbol": symbol} if symbol else {}
@@ -71,9 +84,32 @@ def describe_transfer(t: dict[str, Any]) -> str:
     return f"{capitalize(what)} failed. {t['failure_reason']}"
 
 
+def describe_restrictions(r: dict[str, Any]) -> str:
+    order = r["proposed_order"]
+    if order is not None:
+        noun = "share" if order["quantity"] == 1 else "shares"
+        what = f"{order['side'].lower()} {order['quantity']} {noun} of {order['symbol']}"
+        cost = f"(estimated cost ${order['estimated_cost']:,.2f})"
+        if r["can_place_order"]:
+            return f"Yes, you can {what} {cost}. Your buying power is ${r['buying_power']:,.2f}."
+        reasons = " ".join(b["message"] for b in r["blocking_reasons"])
+        return f"You can't {what} {cost} right now. {reasons}"
+    parts = [f"Your buying power is ${r['buying_power']:,.2f}."]
+    if r["unsettled_funds"]:
+        parts.append(
+            f"${r['unsettled_funds']:,.2f} from a recent sale is unsettled until {r['unsettled_settlement_date']}."
+        )
+    for x in r["restrictions"]:
+        parts.append(x["description"])
+    parts.append("Which order are you trying to place (ticker, buy or sell, and number of shares)? I can check it exactly.")
+    return " ".join(parts)
+
+
 def write_reply(tool_name: str, result: dict[str, Any]) -> str:
     if "error" in result:
         return f"Sorry, I couldn't look that up: {result['error']['message']}"
+    if tool_name == "get_account_restrictions":
+        return describe_restrictions(result)
     if tool_name == "get_transfer_status":
         if not result["transfers"]:
             return "I couldn't find a matching transfer on your account."
@@ -101,5 +137,5 @@ class MockBrokerageChatModel(BaseChatModel):
             if call:
                 reply = AIMessage(content="", tool_calls=[call])
             else:
-                reply = AIMessage(content="I can help you check on your orders and transfers. What would you like to look up?")
+                reply = AIMessage(content=FALLBACK_REPLY)
         return ChatResult(generations=[ChatGeneration(message=reply)])

@@ -3,6 +3,7 @@ import pytest
 from app.services.mock_brokerage_service import (
     AccountNotFoundError,
     InvalidRequestError,
+    get_account_restrictions,
     get_trade_status,
     get_transfer_status,
 )
@@ -27,7 +28,7 @@ def test_trade_status_by_symbol(symbol, status, filled, avg_price):
 
 
 def test_no_symbol_returns_all_orders():
-    assert len(get_trade_status("ACCT-DEMO-1001").orders) == 3
+    assert len(get_trade_status("ACCT-DEMO-1001").orders) == 4
 
 
 def test_unknown_symbol_returns_no_orders():
@@ -72,3 +73,36 @@ def test_transfer_validation():
         get_transfer_status("ACCT-DEMO-1001", direction="sideways")
     with pytest.raises(AccountNotFoundError):
         get_transfer_status("ACCT-DEMO-9999")
+
+
+@pytest.mark.parametrize(
+    "symbol, side, quantity, can_place, codes",
+    [
+        ("NVDA", "BUY", 2, True, []),  # no restriction
+        ("NVDA", "BUY", 10, False, ["UNSETTLED_FUNDS"]),  # covered once the AAPL sale settles
+        ("AMD", "BUY", 25, False, ["INSUFFICIENT_BUYING_POWER"]),  # not covered even then
+        ("GOOGL", "BUY", 1, False, ["ACCOUNT_RESTRICTION"]),  # insider pre-clearance
+        ("TSLA", "SELL", 9, False, ["INSUFFICIENT_SHARES"]),  # holds only 5
+    ],
+)
+def test_pre_trade_checks(symbol, side, quantity, can_place, codes):
+    result = get_account_restrictions("ACCT-DEMO-1001", symbol=symbol, side=side, quantity=quantity)
+    assert result.can_place_order is can_place
+    assert [b.code for b in result.blocking_reasons] == codes
+
+
+def test_account_check_without_an_order():
+    result = get_account_restrictions("ACCT-DEMO-1001")
+    assert result.proposed_order is None and result.can_place_order is None
+    assert result.buying_power == 412.55
+    assert result.unsettled_funds == 1381.02
+    assert [r.code for r in result.restrictions] == ["INSIDER_PRE_CLEARANCE"]
+
+
+def test_restriction_validation():
+    with pytest.raises(InvalidRequestError):
+        get_account_restrictions("ACCT-DEMO-1001", symbol="NVDA")  # side and quantity missing
+    with pytest.raises(InvalidRequestError):
+        get_account_restrictions("ACCT-DEMO-1001", symbol="ZZZZ", side="BUY", quantity=1)  # no quote
+    with pytest.raises(InvalidRequestError):
+        get_account_restrictions("ACCT-DEMO-1001", symbol="NVDA", side="BUY", quantity=0)
