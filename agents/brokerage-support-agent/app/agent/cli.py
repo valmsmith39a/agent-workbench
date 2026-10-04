@@ -15,13 +15,7 @@ from langchain_mcp_adapters.tools import load_mcp_tools
 
 from app.agent.graph import build_graph
 from app.agent.llm import create_chat_model
-
-# Stand-in for the signed-in customer until there is real authentication.
-DEMO_ACCOUNT_ID = "ACCT-DEMO-1001"
-
-MCP_SERVERS = {
-    "brokerage": {"transport": "stdio", "command": sys.executable, "args": ["-m", "app.mcp.server"]},
-}
+from app.config import DEMO_ACCOUNT_ID, MCP_SERVERS
 
 
 async def main(question: str) -> None:

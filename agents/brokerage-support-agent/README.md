@@ -9,7 +9,7 @@ This project is being built in small steps. Each step adds one layer and can be 
 - [x] **Step 1: mock brokerage data and a trade status lookup.** Plain Python, no AI yet.
 - [x] **Step 2: expose the lookup as an MCP tool (`get_trade_status`)**
 - [x] **Step 3: a LangGraph agent that calls the tool to answer "Did my NVDA trade go through?"**
-- [ ] Step 4: a FastAPI chat endpoint
+- [x] **Step 4: a FastAPI chat endpoint**
 - [ ] Step 5: a simple chat UI
 - [ ] Step 6: add `get_transfer_status`
 - [ ] Step 7: add `get_account_restrictions`
@@ -83,3 +83,26 @@ python -m app.agent.cli "Did my NVDA trade go through?"
 export ANTHROPIC_API_KEY=...   # optional: use Claude instead of the offline stand-in
 pytest
 ```
+
+## Step 4: the chat API
+
+```
+app/main.py          FastAPI app: starts the MCP server on startup, POST /api/chat
+app/config.py        demo account and MCP server settings, shared by the CLI and API
+app/models/api.py    ChatRequest / ChatResponse
+tests/test_api.py    calls the API end to end
+```
+
+On startup the app launches the MCP server once and keeps the session open;
+each request runs the agent graph. The customer's account is set on the server
+(a fixed demo account until there is authentication), not sent by the client.
+
+Run it:
+
+```bash
+uvicorn app.main:app --reload
+curl -s localhost:8000/api/chat -H 'Content-Type: application/json' \
+  -d '{"message": "Did my NVDA trade go through?"}'
+```
+
+Interactive API docs: http://localhost:8000/docs
