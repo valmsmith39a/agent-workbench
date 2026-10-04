@@ -10,7 +10,7 @@ This project is being built in small steps. Each step adds one layer and can be 
 - [x] **Step 2: expose the lookup as an MCP tool (`get_trade_status`)**
 - [x] **Step 3: a LangGraph agent that calls the tool to answer "Did my NVDA trade go through?"**
 - [x] **Step 4: a FastAPI chat endpoint**
-- [ ] Step 5: a simple chat UI
+- [x] **Step 5: a simple chat UI**
 - [ ] Step 6: add `get_transfer_status`
 - [ ] Step 7: add `get_account_restrictions`
 - [ ] Step 8: tool trace in the UI, and a fuller README
@@ -106,3 +106,20 @@ curl -s localhost:8000/api/chat -H 'Content-Type: application/json' \
 ```
 
 Interactive API docs: http://localhost:8000/docs
+
+## Step 5: the chat UI
+
+```
+frontend/index.html   single-page chat UI (plain HTML/CSS/JS, no build step)
+app/main.py           now also serves the page at GET /
+```
+
+The page posts each message to `/api/chat` and shows the answer, plus which
+tool the agent used. Click a suggested question or type your own.
+
+Run it:
+
+```bash
+uvicorn app.main:app --reload
+# open http://localhost:8000
+```

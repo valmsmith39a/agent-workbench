@@ -1,4 +1,5 @@
-"""The HTTP API: POST /api/chat sends one customer message to the agent.
+"""The web app: GET / serves the chat page, POST /api/chat sends one customer
+message to the agent.
 
 On startup the app launches the brokerage MCP server as a subprocess, keeps
 one MCP session open for as long as the app runs, and builds the agent graph
@@ -10,13 +11,14 @@ once. Each request then just runs the graph.
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.tools import load_mcp_tools
 
 from app.agent.graph import build_graph
 from app.agent.llm import create_chat_model
-from app.config import DEMO_ACCOUNT_ID, MCP_SERVERS
+from app.config import DEMO_ACCOUNT_ID, MCP_SERVERS, PROJECT_ROOT
 from app.models.api import ChatRequest, ChatResponse, ToolCall
 
 
@@ -32,6 +34,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Brokerage Customer Support Agent", lifespan=lifespan)
+
+
+@app.get("/", include_in_schema=False)
+def index() -> FileResponse:
+    return FileResponse(PROJECT_ROOT / "frontend" / "index.html")
 
 
 @app.post("/api/chat", response_model=ChatResponse)

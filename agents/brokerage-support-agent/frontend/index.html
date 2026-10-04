@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Brokerage Support Agent</title>
+  <style>
+    :root {
+      --bg: #f6f7f9; --panel: #ffffff; --text: #16191f; --muted: #667085;
+      --border: #e4e7ec; --accent: #1d4ed8; --error: #b42318;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+      font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .app { max-width: 760px; margin: 0 auto; height: 100vh; display: flex; flex-direction: column; padding: 0 16px; }
+    header { padding: 20px 0 14px; border-bottom: 1px solid var(--border); }
+    h1 { font-size: 18px; margin: 0; }
+    .sub { color: var(--muted); font-size: 13px; }
+    #log { flex: 1; overflow-y: auto; padding: 20px 0; display: flex; flex-direction: column; gap: 12px; }
+    .msg { max-width: 85%; padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; }
+    .user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+    .assistant { align-self: flex-start; background: var(--panel); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+    .assistant.pending { color: var(--muted); font-style: italic; }
+    .assistant.error { color: var(--error); }
+    .tools { display: block; margin-top: 6px; font-size: 12px; color: var(--muted); }
+    .empty { margin: auto 0; text-align: center; color: var(--muted); }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 12px; }
+    .chip { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 999px; cursor: pointer;
+      border: 1px solid var(--border); background: var(--panel); color: var(--text); }
+    .chip:hover { border-color: var(--accent); color: var(--accent); }
+    form { display: flex; gap: 8px; padding: 14px 0 20px; border-top: 1px solid var(--border); }
+    input { flex: 1; min-width: 0; font: inherit; padding: 11px 14px; border-radius: 10px;
+      border: 1px solid var(--border); background: var(--panel); color: var(--text); }
+    input:focus { outline: none; border-color: var(--accent); }
+    button.send { font: inherit; padding: 0 18px; border: 0; border-radius: 10px; background: var(--accent); color: #fff; cursor: pointer; }
+    button.send:disabled { opacity: .5; cursor: default; }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Brokerage Customer Support Agent</h1>
+    <div class="sub">Signed in as demo customer ACCT-DEMO-1001 · mock data</div>
+  </header>
+
+  <div id="log">
+    <div class="empty" id="empty">
+      Ask about one of your orders.
+      <div class="chips">
+        <button class="chip">Did my NVDA trade go through?</button>
+        <button class="chip">What happened to my AMD order?</button>
+        <button class="chip">Any update on my TSLA order?</button>
+      </div>
+    </div>
+  </div>
+
+  <form id="form">
+    <input id="input" type="text" placeholder="Type a question…" autocomplete="off" autofocus>
+    <button class="send" id="send">Send</button>
+  </form>
+</div>
+
+<script>
+  const log = document.getElementById("log");
+  const input = document.getElementById("input");
+  const send = document.getElementById("send");
+
+  // Add a chat bubble. Text goes in via textContent, so nothing is parsed as HTML.
+  function addMessage(role, text, extraClass = "") {
+    document.getElementById("empty")?.remove();
+    const bubble = document.createElement("div");
+    bubble.className = `msg ${role} ${extraClass}`;
+    bubble.textContent = text;
+    log.appendChild(bubble);
+    log.scrollTop = log.scrollHeight;
+    return bubble;
+  }
+
+  async function ask(message) {
+    addMessage("user", message);
+    const bubble = addMessage("assistant", "Checking your account…", "pending");
+    send.disabled = true;
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail ? JSON.stringify(data.detail) : res.statusText);
+
+      bubble.className = "msg assistant";
+      bubble.textContent = data.answer;
+      if (data.tool_calls.length) {
+        const tools = document.createElement("span");
+        tools.className = "tools";
+        tools.textContent = "Looked up with: " + data.tool_calls.map((t) => t.name).join(", ");
+        bubble.appendChild(tools);
+      }
+    } catch (err) {
+      bubble.className = "msg assistant error";
+      bubble.textContent = "Something went wrong: " + err.message;
+    } finally {
+      send.disabled = false;
+      input.focus();
+      log.scrollTop = log.scrollHeight;
+    }
+  }
+
+  document.getElementById("form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const message = input.value.trim();
+    if (!message || send.disabled) return;
+    input.value = "";
+    ask(message);
+  });
+
+  // Suggested questions: clicking one sends it.
+  log.addEventListener("click", (event) => {
+    if (event.target.classList.contains("chip")) ask(event.target.textContent);
+  });
+</script>
+</body>
+</html>

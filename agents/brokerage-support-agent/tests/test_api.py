@@ -23,3 +23,9 @@ def test_chat_answers_trade_status_question(client):
 
 def test_empty_message_is_rejected(client):
     assert client.post("/api/chat", json={"message": ""}).status_code == 422
+
+
+def test_chat_page_is_served(client):
+    res = client.get("/")
+    assert res.status_code == 200
+    assert "Brokerage Customer Support Agent" in res.text
