@@ -21,6 +21,13 @@ def test_chat_answers_trade_status_question(client):
     assert "118.42" in body["answer"]
 
 
+def test_chat_answers_transfer_question(client):
+    res = client.post("/api/chat", json={"message": "Where is my $5,000 transfer?"})
+    body = res.json()
+    assert body["tool_calls"] == [{"name": "get_transfer_status", "args": {"amount": 5000.0}}]
+    assert "processing" in body["answer"]
+
+
 def test_empty_message_is_rejected(client):
     assert client.post("/api/chat", json={"message": ""}).status_code == 422
 

@@ -11,7 +11,7 @@ This project is being built in small steps. Each step adds one layer and can be 
 - [x] **Step 3: a LangGraph agent that calls the tool to answer "Did my NVDA trade go through?"**
 - [x] **Step 4: a FastAPI chat endpoint**
 - [x] **Step 5: a simple chat UI**
-- [ ] Step 6: add `get_transfer_status`
+- [x] **Step 6: add `get_transfer_status`**
 - [ ] Step 7: add `get_account_restrictions`
 - [ ] Step 8: tool trace in the UI, and a fuller README
 
@@ -122,4 +122,29 @@ Run it:
 ```bash
 uvicorn app.main:app --reload
 # open http://localhost:8000
+```
+
+## Step 6: the transfer tool
+
+Adding a second tool touches each layer once, and nothing else:
+
+```
+app/models/brokerage.py                 + Transfer, TransferStatusResult
+app/services/mock_brokerage_service.py  + transfer data, get_transfer_status(); BrokerageError base class
+app/mcp/tools/transfers.py              new get_transfer_status MCP tool
+app/mcp/tools/common.py                 new run_tool helper shared by both tools
+app/mcp/server.py                       registers the transfers tool
+app/agent/prompts.py                    tells the model when to use each tool
+app/agent/mock_llm.py                   offline stand-in learns transfer questions
+frontend/index.html                     transfer questions in the suggestions
+```
+
+The agent graph didn't change: it works with whatever tools the MCP server
+advertises.
+
+Mock transfers: a $5,000 deposit that is **processing**, a $2,500 deposit that
+**completed**, and a $1,000 withdrawal that **failed** (bank account closed).
+
+```bash
+python -m app.agent.cli "Where is the \$5,000 I transferred from my checking account?"
 ```

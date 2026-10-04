@@ -40,15 +40,25 @@ async def test_nvda_question_calls_get_trade_status_and_answers(tools):
     assert "118.42" in answer.text
 
 
+async def test_transfer_question_calls_get_transfer_status_and_answers(tools):
+    messages = await ask(MockBrokerageChatModel(), tools, "Where is the $5,000 I transferred from my checking account?")
+    human, tool_request, tool_result, answer = messages
+    assert tool_request.tool_calls[0]["name"] == "get_transfer_status"
+    assert tool_request.tool_calls[0]["args"] == {"amount": 5000.0}
+    assert '"PROCESSING"' in tool_result.text
+    assert "2026-10-05" in answer.text
+
+
 async def test_question_without_a_trade_gets_no_tool_call(tools):
     messages = await ask(MockBrokerageChatModel(), tools, "hello")
     assert len(messages) == 2 and not messages[1].tool_calls
 
 
 async def test_model_never_sees_account_id(tools):
-    params = model_facing_schema(tools[0])["function"]["parameters"]
-    assert "account_id" not in params["properties"]
-    assert "account_id" not in params["required"]
+    for tool in tools:
+        params = model_facing_schema(tool)["function"]["parameters"]
+        assert "account_id" not in params["properties"]
+        assert "account_id" not in params["required"]
 
 
 class AccountSwitchingModel(BaseChatModel):

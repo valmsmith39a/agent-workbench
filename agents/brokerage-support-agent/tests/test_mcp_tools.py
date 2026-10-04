@@ -29,9 +29,9 @@ async def call(session, name, **args):
     return result.structuredContent
 
 
-async def test_server_advertises_get_trade_status(session):
+async def test_server_advertises_both_tools(session):
     tools = await session.list_tools()
-    assert [t.name for t in tools.tools] == ["get_trade_status"]
+    assert [t.name for t in tools.tools] == ["get_trade_status", "get_transfer_status"]
 
 
 @pytest.mark.parametrize(
@@ -50,4 +50,17 @@ async def test_errors_come_back_as_structured_data(session):
     data = await call(session, "get_trade_status", account_id="ACCT-DEMO-9999")
     assert data["error"]["code"] == "ACCOUNT_NOT_FOUND"
     data = await call(session, "get_trade_status", account_id="ACCT-DEMO-1001", symbol="not a ticker")
+    assert data["error"]["code"] == "INVALID_REQUEST"
+
+
+@pytest.mark.parametrize("amount, status", [(5000, "PROCESSING"), (2500, "COMPLETED"), (1000, "FAILED")])
+async def test_get_transfer_status(session, amount, status):
+    data = await call(session, "get_transfer_status", account_id="ACCT-DEMO-1001", amount=amount)
+    [transfer] = data["transfers"]
+    assert transfer["status"] == status
+    assert transfer["transfer_id"].startswith("TRF-")
+
+
+async def test_transfer_errors_come_back_as_structured_data(session):
+    data = await call(session, "get_transfer_status", account_id="ACCT-DEMO-1001", amount=-1)
     assert data["error"]["code"] == "INVALID_REQUEST"
