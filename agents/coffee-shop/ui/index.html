@@ -1,0 +1,24 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Bean There support (mock)</title>
+<style>body{font-family:system-ui;max-width:720px;margin:2rem auto}#log div{margin:.4rem 0}.u{color:#333}.a{color:#6b3e1d}
+pre{background:#f6f3ef;padding:.5rem;font-size:12px;white-space:pre-wrap}</style></head>
+<body><h2>☕ Bean There support (mock agent)</h2>
+<label>Customer <select id="cust"><option>CUST-201</option><option>CUST-202</option><option>CUST-203</option></select></label>
+<label><input type="checkbox" id="trace"> show trace</label>
+<div id="log"></div>
+<form id="f"><input id="msg" size="60" placeholder="e.g. I'd like to order a large latte with oat milk" autofocus> <button>Send</button></form>
+<script>
+const log = document.getElementById('log'); let history = [];
+function add(cls, text){const d=document.createElement('div');d.className=cls;d.textContent=text;log.appendChild(d);return d;}
+document.getElementById('cust').onchange = () => { history = []; log.innerHTML = ''; };
+document.getElementById('f').onsubmit = async (e) => {
+  e.preventDefault(); const m = document.getElementById('msg'); const text = m.value.trim(); if (!text) return; m.value = '';
+  add('u', 'You: ' + text);
+  const r = await fetch('/chat', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({message:text, customer_id:document.getElementById('cust').value, history})});
+  const j = await r.json(); add('a', 'Agent: ' + (j.answer ?? JSON.stringify(j)));
+  if (document.getElementById('trace').checked && j.trace) { const p=document.createElement('pre');
+    p.textContent = `steps=${j.steps} tool_calls=${j.tool_calls} via ${j.tool_source} (${j.latency_ms} ms)\n` + j.trace.map(t=>JSON.stringify(t)).join('\n'); log.appendChild(p); }
+  history.push({role:'user',content:text},{role:'assistant',content:j.answer});
+};
+</script></body></html>
